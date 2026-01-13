@@ -1,0 +1,38 @@
+Documentação de Arquitetura: Uso do Redis na API
+
+# 1. Estratégia de Isolamento (Wrapper Pattern)
+O projeto não utiliza a biblioteca do Redis diretamente nos controles (controllers). Em vez disso, foi criado um módulo intermediário (libs/cache.js) que atua como um adaptador.
+
+Por que isso é importante?
+Se no futuro precisarmos trocar o Redis por outra tecnologia (como Memcached ou DynamoDB), ou se a biblioteca oficial do Redis mudar drasticamente, só precisaremos ajustar este arquivo central. O restante do sistema permanecerá intacto, pois ele "conversa" apenas com o adaptador.
+
+# 2. Padrão de Resiliência (Fail-Safe)
+Uma das partes mais críticas da implementação é a proteção contra falhas. O sistema foi desenhado para não confiar cegamente que o Redis estará online.
+
+Como funciona?
+O adaptador monitora eventos de conexão (error, end, ready). Se a conexão cair, uma "chave mestra" interna é desligada.
+O impacto:
+Todas as tentativas de leitura ou escrita verificam essa chave antes de prosseguir. Se o Redis estiver fora do ar, a operação é abortada silenciosamente e retorna null, permitindo que a aplicação continue funcionando (talvez um pouco mais lenta, mas sem travar), em vez de lançar erros fatais para o usuário.
+
+# 3. Gestão de Ciclo de Vida dos Dados (TTL - Time To Live)
+O sistema raramente salva dados permanentemente no Redis. Quase todas as operações de escrita utilizam um tempo de expiração (expire).
+
+Cache de Configurações (Curto Prazo - 60s): Usado para dados que mudam raramente, mas precisam de alta disponibilidade. O tempo curto garante que, se uma configuração mudar no banco, o cache se atualizará em no máximo 1 minuto.
+Locks de Idempotência (Médio Prazo): As travas de segurança mantêm o registro de um pedido em processamento por tempo suficiente para evitar duplicatas imediatas.
+
+# 4. Segurança de Ambientes (Namespacing)
+Para evitar desastres em ambientes onde o mesmo servidor Redis é compartilhado (ex: Desenvolvimento e QA usando a mesma máquina), o sistema aplica automaticamente um prefixo a todas as chaves.
+
+Exemplo Prático:
+Se a aplicação tentar salvar a chave usuario_123, e estiver rodando em "Produção", o adaptador salvará como production_usuario_123.
+Isso isola completamente os dados, impedindo que testes de um desenvolvedor limpem ou corrompam dados de outro ambiente.
+
+# 5. Idempotência e Concorrência (Distributed Lock)
+Este é o uso mais avançado aplicado no sistema. O Redis é usado para resolver o problema de "cliques duplos" ou requisições duplicadas.
+
+O Cenário de Risco: Um usuário clica duas vezes no botão "Finalizar Pedido" ou a rede oscila e reenvia o sinal. Isso poderia cobrar o cartão duas vezes.
+A Solução Lógica:
+O sistema usa uma operação atômica chamada "Definir se Não Existir" (setnx).
+A requisição A chega e tenta criar a chave "pedido_X". O Redis diz "OK, criei".
+A requisição B (duplicada) chega milissegundos depois e tenta criar a chave "pedido_X". O Redis diz "Negado, já existe".
+A requisição B entende que é uma duplicata e aguarda a A terminar, devolvendo o mesmo resultado da A, garantindo que o processamento real ocorra apenas uma vez.

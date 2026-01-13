@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Painel Redis + Mongo</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 40px;
+      text-align: center;
+    }
+
+    button {
+      padding: 15px 30px;
+      font-size: 18px;
+      cursor: pointer;
+      background-color: #28a745;
+      color: white;
+      border: none;
+      border-radius: 5px;
+    }
+
+    button:hover {
+      background-color: #218838;
+    }
+
+    a {
+      display: block;
+      margin-top: 20px;
+      color: #007bff;
+      text-decoration: none;
+      font-size: 18px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Painel de Controle Redis</h1>
+  <p>Abra o terminal do VS Code para ver os logs de performance (Antes vs Depois).</p>
+
+  <button onclick="criarProduto()">
+    📦 Adicionar Novo Produto (e Invalidar Cache)
+  </button>
+
+  <hr style="margin: 30px 0;">
+
+  <h2>Funcionalidade 100% Redis (Carrinho Temporário)</h2>
+  <p>Estes dados ficam apenas na memória RAM e somem em 5 minutos.</p>
+  
+  <button onclick="adicionarAoCarrinho()" style="background-color: #ffc107; color: #000;">
+    🛒 Adicionar ao Carrinho
+  </button>
+  
+  <button onclick="verCarrinho()" style="background-color: #17a2b8;">
+    👀 Ver meu Carrinho
+  </button>
+
+  <a href="/produtos" target="_blank">🔗 Ver Lista de Produtos (JSON)</a>
+
+  <script>
+
+    async function adicionarAoCarrinho() {
+      const resp = await fetch('/carrinho', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idUsuario: "usuario_teste_1",
+          produto: "Headset Wireless"
+        })
+      });
+      const dados = await resp.json();
+      alert(dados.mensagem);
+    }
+
+    async function verCarrinho() {
+      const resp = await fetch('/carrinho/usuario_teste_1');
+      const dados = await resp.json();
+      alert(JSON.stringify(dados, null, 2));
+    }
+
+    async function criarProduto() {
+      const btn = document.querySelector('button');
+      const textoOriginal = btn.innerText;
+      btn.innerText = 'Processando...';
+      btn.disabled = true;
+
+      try {
+        const resp = await fetch('/produtos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            nome: "Novo Produto " + Date.now(),
+            preco: 99.90,
+            descricao: "Criado via Arquivo HTML separado"
+          })
+        });
+
+        if (resp.ok) {
+          alert('Sucesso: Produto criado e Cache do Redis limpo!');
+        } else {
+          alert('Erro ao criar produto');
+        }
+      } catch (error) {
+        console.error(error);
+        alert('Erro na requisição');
+      } finally {
+        btn.innerText = textoOriginal;
+        btn.disabled = false;
+      }
+    }
+  </script>
+</body>
+
+</html>
